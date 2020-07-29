@@ -4,16 +4,15 @@ use std::collections::HashMap;
 use std::io::*;
 use std::net::TcpStream;
 use std::str::*;
-use std::time::{Duration, UNIX_EPOCH};
-
-use log;
-use paho_mqtt as mqtt;
-use paho_mqtt::{MqttError, Client};
-use std::time::SystemTime;
-use regex::Regex;
-use clap::Clap;
-use log::LevelFilter;
 use std::thread::sleep;
+use std::time::{Duration};
+
+use clap::Clap;
+use log;
+use log::LevelFilter;
+use paho_mqtt as mqtt;
+use paho_mqtt::{Client, MqttError};
+use regex::Regex;
 
 fn read_status_text(addr: &str) -> Result<String> {
     log::info!("Connect to apcupsd server: {}", addr);
@@ -59,34 +58,31 @@ fn clean_and_split(s: String) -> HashMap<String, String> {
         }).collect()
 }
 
-fn filter_fields(data: HashMap<String, String>) -> HashMap<String, String> {
-    let allowed = vec!("linev", "loadpct", "bcharge", "timeleft", "battv", "cumonbatt");
+fn filter_fields(fields: &Vec<&str>, data: HashMap<String, String>) -> HashMap<String, String> {
+    log::debug!("Data to filter: {:?}\n\tAllowed: {:?}", data, fields);
     data.into_iter()
         .filter(|(name, _)| 
-            allowed.contains(&name.as_str())
+            fields.contains(&name.as_str())
         ).collect()
 }
 
 fn convert_mqtt_errors(e: MqttError) -> std::io::Error {
-    std::io::Error::new(ErrorKind::InvalidData, e.to_string())
+    std::io::Error::new(ErrorKind::InvalidData, format!("{:?}", e))
 }
 
 fn send_to_mosquitto(client: &Client, data: HashMap<String, String>) -> Result<()> {
-    let ts = SystemTime::now().duration_since(UNIX_EPOCH)
-                        .unwrap()
-                        .as_millis();
-    data.iter().map(|entry| {
-            let msg = mqtt::MessageBuilder::new()
-                .topic(format!("/sensors/apcups/{}", entry.0))
-                .payload(format!("{}: {}", ts, entry.1))
-                .qos(1)
-                .finalize();
+    let data: String = data.iter().map(|entry| {
+            format!("{}: {}\n", entry.0, entry.1)
+        }).collect();
 
-            log::info!("Send message: {}", msg);
-            client.publish(msg)
-        }).find(|r| r.is_err())
-        .unwrap_or(Ok(()) )
-        .map_err(convert_mqtt_errors)
+    let msg = mqtt::MessageBuilder::new()
+        .topic("/sensors/apcups")
+        .payload(data)
+        .qos(1)
+        .finalize();
+
+    log::info!("Send message: {}", msg);
+    client.publish(msg).map_err(convert_mqtt_errors)
 }
 
 fn create_mqtt_client(addr: String) -> Client {
@@ -128,6 +124,9 @@ struct Opts {
     /// logging level: off, error, warn, info, debug, trace
     #[clap(short, long, default_value="info")]
     level: String,
+    /// comma separated set of fields to be transferred
+    #[clap(short, long, default_value="linev,loadpct,bcharge,timeleft,battv,cumonbatt")]
+    fields: String,
 }
 
 fn main() {
@@ -136,13 +135,15 @@ fn main() {
     env_logger::builder().filter_level(
         LevelFilter::from_str(opts.level.as_str()).unwrap()
     ).init();
+    let allowed_fields: Vec<&str> = opts.fields.split(",").map(|s| s.trim()).collect();
+    log::info!("Field set: {:?}", &allowed_fields);
 
     let mqtt_client = create_mqtt_client(opts.target);
 
     loop {
         read_status_text(opts.source.as_str())
             .map(clean_and_split)
-            .map(filter_fields)
+            .map(|data| filter_fields(&allowed_fields, data))
             .and_then(|data| send_to_mosquitto(&mqtt_client, data))
             .map(|_| log::info!("Data successfully send to mqtt server"))
             .map_err(|e| log::error!("{}", e))
