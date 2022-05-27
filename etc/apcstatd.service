@@ -3,8 +3,10 @@ Description=Add signal acquire from switches board
 After=multi-user.target
 
 [Service]
+Restart=always
+RestartSec=90
 Type=simple
-ExecStart=/bin/apcstatd &
+ExecStart=/bin/apcstatd localhost:3551 anton:1883
 Restart=always
 
 [Install]
