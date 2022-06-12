@@ -24,7 +24,7 @@ pub fn read_status_text(addr: &str) -> Result<String> {
             s.push_str(from_utf8(&buf).unwrap());
         }
 
-        if s.contains("  \n\x00\x00") {
+        if s.contains("\n\x00\x00") {
             log::debug!("Response received: {}", s);
             return Ok(s)
         }
@@ -49,10 +49,12 @@ fn strip_field_value(raw: &str) -> String {
 pub fn clean_and_split(s: String) -> HashMap<String, String> {
     s.split('\n')
         .map(|s| s.trim())
-        .flat_map(|s| match s.splitn(2, ':').collect::<Vec<&str>>().as_slice() {
-            [name, value] => Some((strip_field_name(name), strip_field_value(value))),
-            _ => None, // todo log about unexpected value string format
-        }).collect()
+        .flat_map(|s|
+            match s.splitn(2, ':').collect::<Vec<&str>>().as_slice() {
+                [name, value] => Some((strip_field_name(name), strip_field_value(value))),
+                _ => None, // todo log about unexpected value string format
+        })
+        .collect()
 }
 
 pub fn filter_fields(fields: &Vec<&str>, data: HashMap<String, String>) -> HashMap<String, String> {
@@ -112,10 +114,13 @@ pub fn create_mqtt_client(addr: String) -> Client {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
     use super::*;
 
     #[test]
-    fn test_strip_field_name() {
-        assert_eq!(strip_field_name("abc"), "abc")
+    fn test_parse() {
+        let data = fs::read_to_string("testdata/response.dat");
+        let pairs = clean_and_split(data.unwrap());
+        assert_eq!("266.0", pairs.get("hitrans").unwrap());
     }
 }
