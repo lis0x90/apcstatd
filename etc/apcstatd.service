@@ -1,5 +1,5 @@
 [Unit]
-Description=Add signal acquire from switches board
+Description=Translate APC daemon status to MQTT topic
 After=multi-user.target
 
 [Service]
