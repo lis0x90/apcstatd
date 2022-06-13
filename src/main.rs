@@ -1,8 +1,8 @@
 use std::str::FromStr;
 use clap::Parser;
+use parse_duration;
 
 use std::thread::sleep;
-use std::time::{Duration};
 use log::LevelFilter;
 use apcstatd::*;
 
@@ -20,6 +20,9 @@ struct Opts {
     /// comma separated set of fields to be transferred
     #[clap(short, long, default_value="linev,loadpct,bcharge,timeleft,battv,cumonbatt")]
     fields: String,
+    /// APC daemon polling interval
+    #[clap(short, long, default_value="10secs")]
+    polling_interval: String
 }
 
 
@@ -32,7 +35,13 @@ fn main() {
     let allowed_fields: Vec<&str> = opts.fields.split(",").map(|s| s.trim()).collect();
     log::info!("Field set: {:?}", &allowed_fields);
 
+    let polling_interval = parse_duration::parse(&opts.polling_interval)
+        .expect(format!("Error parse value for polling interval: {}", &opts.polling_interval).as_str());
+    log::info!("Polling interval: {:?}", polling_interval);
+
+
     let mqtt_client = create_mqtt_client(opts.target);
+
 
     loop {
         read_status_text(opts.source.as_str())
@@ -43,6 +52,6 @@ fn main() {
             .map_err(|e| log::error!("{}", e))
             .ok();
 
-        sleep(Duration::from_secs(5));
+        sleep(polling_interval);
     }
 }
