@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::io::*;
 use std::net::TcpStream;
-use std::str::*;
+use std::str;
 use std::time::{Duration};
 
 use log;
@@ -17,18 +17,11 @@ pub fn read_status_text(addr: &str) -> Result<String> {
     log::debug!("Connected");
     sock.write("\x00\x06status".as_bytes())?;
 
-    let mut s = String::new();
-    loop {
-        let mut buf = [0 as u8; 100];
-        if sock.read(&mut buf)? > 0 {
-            s.push_str(from_utf8(&buf).unwrap());
-        }
+    let mut buf = Vec::new();
+    sock.read_to_end(&mut buf)?;
 
-        if s.contains("\n\x00\x00") {
-            log::debug!("Response received: {}", s);
-            return Ok(s)
-        }
-    }
+    return String::from_utf8(buf)
+             .map_err(|e| std::io::Error::new(ErrorKind::InvalidData, e.to_string()));
 }
 
 fn strip_field_name(raw: &str) -> String {
